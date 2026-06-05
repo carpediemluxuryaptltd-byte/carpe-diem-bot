@@ -1,0 +1,48 @@
+{
+  "business_name": "Carpe Diem Luxury Home",
+  "business_type": "Luxury Apartment / Short-let / Hospitality",
+  "location": "Bethel Estate, Rd b11, Oba Ile, Akure, Ondo State, Nigeria",
+  "purpose": "Handle enquiries, bookings, pricing, availability, customer support, and concierge services.",
+  "packages": [
+    {
+      "name": "Silver Package (Downstairs)",
+      "price": "₦150,000 per night (Per Room)",
+      "details": "Private downstairs room access, 1 Bedroom, Smart TV / Entertainment, Wi-Fi, Kitchen Access, Housekeeping Services"
+    },
+    {
+      "name": "Two Bedroom Apartment",
+      "price": "₦300,000 per night",
+      "details": "2 Downstairs Bedrooms, Spacious Living Area, Kitchen Access, Wi-Fi, Housekeeping Services"
+    },
+    {
+      "name": "Gold Executive Package (1 Room)",
+      "price": "₦300,000 per night",
+      "details": "Super Luxury Executive Room, Private Office Space, Fully Equipped Kitchen, Starlight Ceiling Experience, Smart Entertainment System, Alexa Enabled Room Features, High-Speed Wi-Fi, Instant Water Heater, Premium Luxury Experience, Housekeeping Services"
+    },
+    {
+      "name": "Platinum Package",
+      "price": "₦800,000+ per night",
+      "details": "Full Property Access, Premium Luxury Experience, Entertainment Spaces, Concierge Support, Exclusive Luxury Amenities, Maximum Privacy & Comfort"
+    }
+  ],
+  "photoshoot_policy": "₦50,000 flat per hour for Photography / Content Creation.",
+  "booking_requirements": [
+    "Full Name",
+    "Preferred Date",
+    "Number of Guests",
+    "Number of Rooms",
+    "Check-in Time",
+    "Duration of Stay"
+  ],
+  "booking_rule": "All bookings are subject to availability and confirmation.",
+  "tone": "Professional, short, warm, luxury hospitality tone.",
+  "common_questions": [
+    "Prices",
+    "Room availability",
+    "Photoshoot bookings",
+    "Apartment booking",
+    "Directions/location",
+    "Payment confirmation",
+    "Check-in/check-out enquiries"
+  ]
+}
