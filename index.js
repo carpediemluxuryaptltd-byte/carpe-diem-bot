@@ -24,6 +24,18 @@ let lastReplyAt = null;
 let messageCount = 0;
 let replyCount = 0;
 let ignoredFromMeCount = 0;
+let reconnectTimer = null;
+let reconnectCount = 0;
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection:', reason);
+    lastError = reason?.message || String(reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught exception:', err);
+    lastError = err.message;
+});
 
 const client = new Client({
     authStrategy: new LocalAuth({
@@ -37,12 +49,31 @@ const client = new Client({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--single-process',
             '--disable-gpu',
         ],
         headless: true,
     },
 });
+
+function scheduleReconnect(reason) {
+    if (reconnectTimer) return;
+
+    reconnectCount += 1;
+    clientState = 'reconnecting';
+    statusMessage = 'WhatsApp disconnected. Reconnecting...';
+    lastError = reason || null;
+
+    reconnectTimer = setTimeout(async () => {
+        reconnectTimer = null;
+        try {
+            console.log(`Reinitializing WhatsApp client. Attempt ${reconnectCount}`);
+            await client.initialize();
+        } catch (err) {
+            console.error('Error reinitializing WhatsApp client:', err);
+            scheduleReconnect(err.message);
+        }
+    }, 10000);
+}
 
 client.on('qr', async (qr) => {
     console.log('QR received. Generating browser QR code...');
@@ -90,6 +121,7 @@ client.on('disconnected', (reason) => {
     statusMessage = 'Disconnected. The service will try to reconnect.';
     lastError = reason;
     qrCodeUrl = null;
+    scheduleReconnect(reason);
 });
 
 client.on('message', async (msg) => {
@@ -287,6 +319,7 @@ app.get('/health', (req, res) => {
         messageCount,
         replyCount,
         ignoredFromMeCount,
+        reconnectCount,
     });
 });
 
@@ -297,5 +330,8 @@ app.listen(PORT, () => {
 if (process.env.SKIP_WHATSAPP === 'true') {
     console.log('WhatsApp client initialization skipped.');
 } else {
-    client.initialize();
+    client.initialize().catch((err) => {
+        console.error('Error initializing WhatsApp client:', err);
+        scheduleReconnect(err.message);
+    });
 }
