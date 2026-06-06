@@ -1,8 +1,14 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const {
+    default: makeWASocket,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    useMultiFileAuthState,
+} = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode');
 const { OpenAI } = require('openai');
 const fs = require('fs');
 const express = require('express');
+const P = require('pino');
 require('dotenv').config();
 
 const knowledge = JSON.parse(fs.readFileSync('./knowledge.json', 'utf8'));
@@ -13,7 +19,9 @@ const openai = new OpenAI({
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SESSION_PATH = process.env.SESSION_PATH || '.baileys_auth';
 
+let sock = null;
 let qrCodeUrl = null;
 let clientState = 'initializing';
 let statusMessage = 'Starting WhatsApp client...';
@@ -24,8 +32,8 @@ let lastReplyAt = null;
 let messageCount = 0;
 let replyCount = 0;
 let ignoredFromMeCount = 0;
-let reconnectTimer = null;
 let reconnectCount = 0;
+let reconnectTimer = null;
 
 process.on('unhandledRejection', (reason) => {
     console.error('Unhandled rejection:', reason);
@@ -37,114 +45,20 @@ process.on('uncaughtException', (err) => {
     lastError = err.message;
 });
 
-const client = new Client({
-    authStrategy: new LocalAuth({
-        dataPath: process.env.SESSION_PATH || '.wwebjs_auth',
-    }),
-    puppeteer: {
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu',
-        ],
-        headless: true,
-    },
-});
-
-function scheduleReconnect(reason) {
-    if (reconnectTimer) return;
-
-    reconnectCount += 1;
-    clientState = 'reconnecting';
-    statusMessage = 'WhatsApp disconnected. Reconnecting...';
-    lastError = reason || null;
-
-    reconnectTimer = setTimeout(async () => {
-        reconnectTimer = null;
-        try {
-            console.log(`Reinitializing WhatsApp client. Attempt ${reconnectCount}`);
-            await client.initialize();
-        } catch (err) {
-            console.error('Error reinitializing WhatsApp client:', err);
-            scheduleReconnect(err.message);
-        }
-    }, 10000);
+function extractMessageText(message) {
+    const content = message.message || {};
+    return (
+        content.conversation ||
+        content.extendedTextMessage?.text ||
+        content.imageMessage?.caption ||
+        content.videoMessage?.caption ||
+        content.documentMessage?.caption ||
+        ''
+    ).trim();
 }
 
-client.on('qr', async (qr) => {
-    console.log('QR received. Generating browser QR code...');
-    try {
-        qrCodeUrl = await qrcode.toDataURL(qr);
-        clientState = 'qr';
-        statusMessage = 'Scan this QR code with WhatsApp Linked Devices.';
-        lastQrAt = new Date().toISOString();
-        lastError = null;
-        console.log('QR code generated successfully.');
-    } catch (err) {
-        clientState = 'error';
-        statusMessage = 'Could not generate QR code.';
-        lastError = err.message;
-        console.error('Error generating QR code:', err);
-    }
-});
-
-client.on('authenticated', () => {
-    console.log('WhatsApp authenticated.');
-    clientState = 'authenticated';
-    statusMessage = 'Authenticated. Finishing startup...';
-    qrCodeUrl = null;
-    lastError = null;
-});
-
-client.on('ready', () => {
-    console.log('WhatsApp client is ready.');
-    clientState = 'ready';
-    statusMessage = 'Connected and running.';
-    qrCodeUrl = null;
-    lastError = null;
-});
-
-client.on('auth_failure', (message) => {
-    console.error('WhatsApp auth failure:', message);
-    clientState = 'auth_failure';
-    statusMessage = 'Authentication failed. Restart the service and scan a fresh QR code.';
-    lastError = message;
-});
-
-client.on('disconnected', (reason) => {
-    console.log('WhatsApp disconnected:', reason);
-    clientState = 'disconnected';
-    statusMessage = 'Disconnected. The service will try to reconnect.';
-    lastError = reason;
-    qrCodeUrl = null;
-    scheduleReconnect(reason);
-});
-
-client.on('message', async (msg) => {
-    messageCount += 1;
-    lastMessageAt = new Date().toISOString();
-    console.log(`Incoming message #${messageCount}: from=${msg.from} fromMe=${msg.fromMe} hasBody=${Boolean(msg.body)}`);
-
-    if (msg.fromMe) {
-        ignoredFromMeCount += 1;
-        console.log('Ignoring message because it was sent from the linked WhatsApp account.');
-        return;
-    }
-
-    if (!msg.body) {
-        console.log('Ignoring message because it has no text body.');
-        return;
-    }
-
-    try {
-        const chat = await msg.getChat();
-        await chat.sendStateTyping();
-
-        const systemPrompt = `
+function buildSystemPrompt() {
+    return `
 You are the AI Concierge for ${knowledge.business_name}, a ${knowledge.business_type}.
 Location: ${knowledge.location}
 
@@ -161,30 +75,135 @@ Your Goal:
 - Be helpful, warm, and professional. Keep responses concise because this is WhatsApp.
 - If you do not know something, ask them to wait while you refer to the manager.
 `;
+}
 
-        const response = await openai.chat.completions.create({
-            model: process.env.OPENAI_MODEL || 'gpt-4o',
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: msg.body },
-            ],
+function scheduleReconnect(reason) {
+    if (reconnectTimer) return;
+
+    reconnectCount += 1;
+    clientState = 'reconnecting';
+    statusMessage = 'WhatsApp disconnected. Reconnecting...';
+    lastError = reason || null;
+
+    reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        startWhatsApp().catch((err) => {
+            console.error('Error reconnecting WhatsApp:', err);
+            scheduleReconnect(err.message);
         });
+    }, 5000);
+}
 
-        const aiReply = response.choices[0]?.message?.content || 'Please hold on while I confirm that for you.';
-        await msg.reply(aiReply);
-        replyCount += 1;
-        lastReplyAt = new Date().toISOString();
-        console.log(`Reply sent #${replyCount} to ${msg.from}`);
-    } catch (err) {
-        console.error('Error handling message:', err);
-        lastError = err.message || String(err);
-        try {
-            await msg.reply('Please hold on while I confirm that for you.');
-        } catch (replyErr) {
-            console.error('Error sending fallback reply:', replyErr);
-        }
+async function startWhatsApp() {
+    if (process.env.SKIP_WHATSAPP === 'true') {
+        console.log('WhatsApp client initialization skipped.');
+        return;
     }
-});
+
+    clientState = 'initializing';
+    statusMessage = 'Starting WhatsApp client...';
+
+    const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
+    const { version } = await fetchLatestBaileysVersion();
+
+    sock = makeWASocket({
+        auth: state,
+        version,
+        logger: P({ level: 'silent' }),
+        browser: ['Carpe Diem Bot', 'Chrome', '1.0.0'],
+        markOnlineOnConnect: true,
+        syncFullHistory: false,
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            console.log('QR received. Generating browser QR code...');
+            qrCodeUrl = await qrcode.toDataURL(qr);
+            clientState = 'qr';
+            statusMessage = 'Scan this QR code with WhatsApp Linked Devices.';
+            lastQrAt = new Date().toISOString();
+            lastError = null;
+            console.log('QR code generated successfully.');
+        }
+
+        if (connection === 'open') {
+            console.log('WhatsApp client is ready.');
+            clientState = 'ready';
+            statusMessage = 'Connected and running.';
+            qrCodeUrl = null;
+            lastError = null;
+        }
+
+        if (connection === 'close') {
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const reason = lastDisconnect?.error?.message || `Disconnected with status ${statusCode || 'unknown'}`;
+            console.log('WhatsApp disconnected:', reason);
+            qrCodeUrl = null;
+
+            if (statusCode === DisconnectReason.loggedOut) {
+                clientState = 'logged_out';
+                statusMessage = 'Logged out. Scan a fresh QR code.';
+                lastError = reason;
+                scheduleReconnect(reason);
+                return;
+            }
+
+            scheduleReconnect(reason);
+        }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        for (const message of messages) {
+            if (!message.message) continue;
+
+            messageCount += 1;
+            lastMessageAt = new Date().toISOString();
+            const jid = message.key.remoteJid;
+            const text = extractMessageText(message);
+            console.log(`Incoming message #${messageCount}: from=${jid} fromMe=${message.key.fromMe} hasBody=${Boolean(text)}`);
+
+            if (message.key.fromMe) {
+                ignoredFromMeCount += 1;
+                console.log('Ignoring message because it was sent from the linked WhatsApp account.');
+                continue;
+            }
+
+            if (!text || jid === 'status@broadcast') {
+                console.log('Ignoring non-text or broadcast message.');
+                continue;
+            }
+
+            try {
+                await sock.sendPresenceUpdate('composing', jid);
+                const response = await openai.chat.completions.create({
+                    model: process.env.OPENAI_MODEL || 'gpt-4o',
+                    messages: [
+                        { role: 'system', content: buildSystemPrompt() },
+                        { role: 'user', content: text },
+                    ],
+                });
+
+                const aiReply = response.choices[0]?.message?.content || 'Please hold on while I confirm that for you.';
+                await sock.sendMessage(jid, { text: aiReply }, { quoted: message });
+                replyCount += 1;
+                lastReplyAt = new Date().toISOString();
+                console.log(`Reply sent #${replyCount} to ${jid}`);
+            } catch (err) {
+                console.error('Error handling message:', err);
+                lastError = err.message || String(err);
+                try {
+                    await sock.sendMessage(jid, { text: 'Please hold on while I confirm that for you.' }, { quoted: message });
+                } catch (replyErr) {
+                    console.error('Error sending fallback reply:', replyErr);
+                }
+            }
+        }
+    });
+}
 
 function renderPage() {
     const isReady = clientState === 'ready';
@@ -327,11 +346,7 @@ app.listen(PORT, () => {
     console.log(`Web server running on port ${PORT}`);
 });
 
-if (process.env.SKIP_WHATSAPP === 'true') {
-    console.log('WhatsApp client initialization skipped.');
-} else {
-    client.initialize().catch((err) => {
-        console.error('Error initializing WhatsApp client:', err);
-        scheduleReconnect(err.message);
-    });
-}
+startWhatsApp().catch((err) => {
+    console.error('Error initializing WhatsApp client:', err);
+    scheduleReconnect(err.message);
+});

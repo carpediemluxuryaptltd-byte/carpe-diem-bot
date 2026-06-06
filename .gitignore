@@ -5,6 +5,7 @@ node_modules/
 .session-*
 .wwebjs_auth/
 .wwebjs_cache/
+.baileys_auth/
 .npm-cache/
 smoke-*.log
 .cache/
