@@ -32,6 +32,12 @@ Required Render environment variable:
 OPENAI_API_KEY=sk-your-key
 ```
 
+Render build command:
+
+```bash
+npm install && npm run render-build
+```
+
 Optional Render environment variable:
 
 ```text

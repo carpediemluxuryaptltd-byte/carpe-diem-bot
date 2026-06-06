@@ -15,7 +15,7 @@ Create a GitHub repository, then upload these project files. Do not upload `.env
 | --- | --- |
 | Name | `carpe-diem-bot` |
 | Environment | `Node` |
-| Build Command | `npm install` |
+| Build Command | `npm install && npm run render-build` |
 | Start Command | `npm start` |
 | Health Check Path | `/health` |
 
