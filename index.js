@@ -19,6 +19,11 @@ let clientState = 'initializing';
 let statusMessage = 'Starting WhatsApp client...';
 let lastQrAt = null;
 let lastError = null;
+let lastMessageAt = null;
+let lastReplyAt = null;
+let messageCount = 0;
+let replyCount = 0;
+let ignoredFromMeCount = 0;
 
 const client = new Client({
     authStrategy: new LocalAuth({
@@ -60,6 +65,7 @@ client.on('authenticated', () => {
     console.log('WhatsApp authenticated.');
     clientState = 'authenticated';
     statusMessage = 'Authenticated. Finishing startup...';
+    qrCodeUrl = null;
     lastError = null;
 });
 
@@ -87,7 +93,20 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('message', async (msg) => {
-    if (msg.fromMe || !msg.body) return;
+    messageCount += 1;
+    lastMessageAt = new Date().toISOString();
+    console.log(`Incoming message #${messageCount}: from=${msg.from} fromMe=${msg.fromMe} hasBody=${Boolean(msg.body)}`);
+
+    if (msg.fromMe) {
+        ignoredFromMeCount += 1;
+        console.log('Ignoring message because it was sent from the linked WhatsApp account.');
+        return;
+    }
+
+    if (!msg.body) {
+        console.log('Ignoring message because it has no text body.');
+        return;
+    }
 
     try {
         const chat = await msg.getChat();
@@ -121,9 +140,17 @@ Your Goal:
 
         const aiReply = response.choices[0]?.message?.content || 'Please hold on while I confirm that for you.';
         await msg.reply(aiReply);
+        replyCount += 1;
+        lastReplyAt = new Date().toISOString();
+        console.log(`Reply sent #${replyCount} to ${msg.from}`);
     } catch (err) {
         console.error('Error handling message:', err);
-        await msg.reply('Please hold on while I confirm that for you.');
+        lastError = err.message || String(err);
+        try {
+            await msg.reply('Please hold on while I confirm that for you.');
+        } catch (replyErr) {
+            console.error('Error sending fallback reply:', replyErr);
+        }
     }
 });
 
@@ -255,6 +282,11 @@ app.get('/health', (req, res) => {
         hasQr: Boolean(qrCodeUrl),
         lastQrAt,
         lastError,
+        lastMessageAt,
+        lastReplyAt,
+        messageCount,
+        replyCount,
+        ignoredFromMeCount,
     });
 });
 
