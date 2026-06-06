@@ -1,0 +1,48 @@
+{
+  "business_name": "Carpe Diem Luxury Home",
+  "business_type": "Luxury Apartment / Short-let / Hospitality",
+  "location": "Bethel Estate, Rd b11, Oba Ile, Akure, Ondo State, Nigeria",
+  "purpose": "Handle enquiries, bookings, pricing, availability, customer support, and concierge services.",
+  "packages": [
+    {
+      "name": "Silver Package (Downstairs)",
+      "price": "NGN 150,000 per night (per room)",
+      "details": "Private downstairs room access, 1 bedroom, Smart TV / entertainment, Wi-Fi, kitchen access, and housekeeping services"
+    },
+    {
+      "name": "Two Bedroom Apartment",
+      "price": "NGN 300,000 per night",
+      "details": "2 downstairs bedrooms, spacious living area, kitchen access, Wi-Fi, and housekeeping services"
+    },
+    {
+      "name": "Gold Executive Package (1 Room)",
+      "price": "NGN 300,000 per night",
+      "details": "Super luxury executive room, private office space, fully equipped kitchen, starlight ceiling experience, smart entertainment system, Alexa-enabled room features, high-speed Wi-Fi, instant water heater, premium luxury experience, and housekeeping services"
+    },
+    {
+      "name": "Platinum Package",
+      "price": "NGN 800,000+ per night",
+      "details": "Full property access, premium luxury experience, entertainment spaces, concierge support, exclusive luxury amenities, maximum privacy, and comfort"
+    }
+  ],
+  "photoshoot_policy": "NGN 50,000 flat per hour for photography / content creation.",
+  "booking_requirements": [
+    "Full Name",
+    "Preferred Date",
+    "Number of Guests",
+    "Number of Rooms",
+    "Check-in Time",
+    "Duration of Stay"
+  ],
+  "booking_rule": "All bookings are subject to availability and confirmation.",
+  "tone": "Professional, short, warm, luxury hospitality tone.",
+  "common_questions": [
+    "Prices",
+    "Room availability",
+    "Photoshoot bookings",
+    "Apartment booking",
+    "Directions/location",
+    "Payment confirmation",
+    "Check-in/check-out enquiries"
+  ]
+}

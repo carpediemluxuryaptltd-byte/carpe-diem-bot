@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: carpe-diem-bot
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_PATH
+        value: .wwebjs_auth
+      - key: OPENAI_API_KEY
+        sync: false
