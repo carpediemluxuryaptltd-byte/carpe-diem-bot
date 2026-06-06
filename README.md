@@ -38,6 +38,8 @@ Render build command:
 npm install && npm run render-build
 ```
 
+Puppeteer is configured with `.puppeteerrc.cjs` so Chrome is installed into the project build and is available when the Render service starts.
+
 Optional Render environment variable:
 
 ```text
