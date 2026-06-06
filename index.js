@@ -34,6 +34,7 @@ let replyCount = 0;
 let ignoredFromMeCount = 0;
 let reconnectCount = 0;
 let reconnectTimer = null;
+let aiMode = 'openai';
 
 process.on('unhandledRejection', (reason) => {
     console.error('Unhandled rejection:', reason);
@@ -75,6 +76,88 @@ Your Goal:
 - Be helpful, warm, and professional. Keep responses concise because this is WhatsApp.
 - If you do not know something, ask them to wait while you refer to the manager.
 `;
+}
+
+function packageListText() {
+    return knowledge.packages
+        .map((pkg) => `- ${pkg.name}: ${pkg.price}. ${pkg.details}`)
+        .join('\n');
+}
+
+function bookingRequirementsText() {
+    return knowledge.booking_requirements.map((item) => `- ${item}`).join('\n');
+}
+
+function localConciergeReply(text) {
+    const normalized = text.toLowerCase();
+    const hasAny = (...words) => words.some((word) => normalized.includes(word));
+
+    if (hasAny('hello', 'hi', 'good morning', 'good afternoon', 'good evening')) {
+        return `Welcome to ${knowledge.business_name}. How may I assist you today? I can help with prices, room details, photoshoot bookings, location, and booking requirements.`;
+    }
+
+    if (hasAny('price', 'prices', 'rate', 'rates', 'cost', 'how much', 'package', 'packages')) {
+        return `Here are our current packages:\n${packageListText()}\n\n${knowledge.booking_rule}`;
+    }
+
+    if (hasAny('photoshoot', 'photo shoot', 'photography', 'content creation', 'content')) {
+        return `Our photoshoot/content creation rate is ${knowledge.photoshoot_policy}\n\nTo book, please send:\n${bookingRequirementsText()}`;
+    }
+
+    if (hasAny('book', 'booking', 'reserve', 'reservation', 'availability', 'available', 'date')) {
+        return `Bookings are subject to availability and confirmation. Kindly send these details so we can confirm for you:\n${bookingRequirementsText()}`;
+    }
+
+    if (hasAny('location', 'address', 'where', 'direction', 'directions')) {
+        return `${knowledge.business_name} is located at ${knowledge.location}.`;
+    }
+
+    if (hasAny('silver')) {
+        const pkg = knowledge.packages.find((item) => item.name.toLowerCase().includes('silver'));
+        return `${pkg.name}: ${pkg.price}. ${pkg.details}`;
+    }
+
+    if (hasAny('gold', 'executive')) {
+        const pkg = knowledge.packages.find((item) => item.name.toLowerCase().includes('gold'));
+        return `${pkg.name}: ${pkg.price}. ${pkg.details}`;
+    }
+
+    if (hasAny('platinum', 'full property', 'entire')) {
+        const pkg = knowledge.packages.find((item) => item.name.toLowerCase().includes('platinum'));
+        return `${pkg.name}: ${pkg.price}. ${pkg.details}`;
+    }
+
+    if (hasAny('two bedroom', '2 bedroom', '2-bedroom')) {
+        const pkg = knowledge.packages.find((item) => item.name.toLowerCase().includes('two bedroom'));
+        return `${pkg.name}: ${pkg.price}. ${pkg.details}`;
+    }
+
+    return `Thank you for contacting ${knowledge.business_name}. Please tell me if you need prices, availability, photoshoot booking, location, or help making a reservation.`;
+}
+
+async function generateReply(text) {
+    if (!process.env.OPENAI_API_KEY) {
+        aiMode = 'local_fallback';
+        return localConciergeReply(text);
+    }
+
+    try {
+        aiMode = 'openai';
+        const response = await openai.chat.completions.create({
+            model: process.env.OPENAI_MODEL || 'gpt-4o',
+            messages: [
+                { role: 'system', content: buildSystemPrompt() },
+                { role: 'user', content: text },
+            ],
+        });
+
+        return response.choices[0]?.message?.content || localConciergeReply(text);
+    } catch (err) {
+        console.error('OpenAI error, using local fallback:', err);
+        aiMode = 'local_fallback';
+        lastError = err.message || String(err);
+        return localConciergeReply(text);
+    }
 }
 
 function scheduleReconnect(reason) {
@@ -179,15 +262,7 @@ async function startWhatsApp() {
 
             try {
                 await sock.sendPresenceUpdate('composing', jid);
-                const response = await openai.chat.completions.create({
-                    model: process.env.OPENAI_MODEL || 'gpt-4o',
-                    messages: [
-                        { role: 'system', content: buildSystemPrompt() },
-                        { role: 'user', content: text },
-                    ],
-                });
-
-                const aiReply = response.choices[0]?.message?.content || 'Please hold on while I confirm that for you.';
+                const aiReply = await generateReply(text);
                 await sock.sendMessage(jid, { text: aiReply }, { quoted: message });
                 replyCount += 1;
                 lastReplyAt = new Date().toISOString();
@@ -196,7 +271,7 @@ async function startWhatsApp() {
                 console.error('Error handling message:', err);
                 lastError = err.message || String(err);
                 try {
-                    await sock.sendMessage(jid, { text: 'Please hold on while I confirm that for you.' }, { quoted: message });
+                    await sock.sendMessage(jid, { text: localConciergeReply(text) }, { quoted: message });
                 } catch (replyErr) {
                     console.error('Error sending fallback reply:', replyErr);
                 }
@@ -315,6 +390,7 @@ function renderPage() {
         ` : `<p>${isReady ? 'Your AI concierge is active and can now reply to WhatsApp messages.' : 'Keep this page open. It refreshes automatically while WhatsApp starts.'}</p>`}
         ${retryMarkup}
         <p class="meta">Status: ${clientState}${lastQrAt ? ` | QR generated: ${lastQrAt}` : ''}</p>
+        <p class="meta">AI mode: ${aiMode === 'openai' ? 'OpenAI' : 'Local fallback'}</p>
     </main>
 </body>
 </html>
@@ -339,6 +415,7 @@ app.get('/health', (req, res) => {
         replyCount,
         ignoredFromMeCount,
         reconnectCount,
+        aiMode,
     });
 });
 
